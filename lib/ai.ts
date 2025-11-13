@@ -53,31 +53,63 @@ Requirements:
 6. No additional text or comments
   `;
 
-  try {
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const text = response.text();
+  // Retry logic for 503 errors
+  const maxRetries = 3;
+  let lastError: any;
 
-    const keyPoints = parseKeyPoints(text);
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const result = await model.generateContent(prompt);
+      const response = await result.response;
+      const text = response.text();
 
-    return {
-      ...news,
-      summary: news.contentSnippet?.substring(0, 200) || '',
-      keyPoints,
-    };
-  } catch (error) {
-    console.error(`Failed to generate summary for "${news.title}":`, error);
+      const keyPoints = parseKeyPoints(text);
 
-    // Fallback: return basic info
-    return {
-      ...news,
-      summary: '',
-      keyPoints: [
-        news.title,
-        ...(news.contentSnippet ? [news.contentSnippet.substring(0, 100) + '...'] : []),
-      ],
-    };
+      if (attempt > 1) {
+        console.log(`    ✓ Succeeded on attempt ${attempt}`);
+      }
+
+      return {
+        ...news,
+        summary: news.contentSnippet?.substring(0, 200) || '',
+        keyPoints,
+      };
+    } catch (error: any) {
+      lastError = error;
+
+      // Check if it's a 503 (Service Unavailable) error
+      if (error.status === 503 && attempt < maxRetries) {
+        const delay = attempt * 2000; // Exponential backoff: 2s, 4s, 6s
+        console.log(`    ⚠️  Attempt ${attempt} failed (503), retrying in ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        continue;
+      }
+
+      // For other errors or last attempt, log and fallback
+      if (attempt === maxRetries) {
+        console.error(`    ❌ Failed after ${maxRetries} attempts:`, error.message);
+
+        // Fallback: return basic info
+        return {
+          ...news,
+          summary: '',
+          keyPoints: [
+            news.title,
+            ...(news.contentSnippet ? [news.contentSnippet.substring(0, 100) + '...'] : []),
+          ],
+        };
+      }
+
+      throw error; // Re-throw if it's not a 503
+    }
   }
+
+  // Fallback should never reach here, but just in case
+  return {
+    ...news,
+    summary: '',
+    keyPoints: ['无法生成摘要'],
+  };
 }
 
 function parseKeyPoints(text: string): string[] {
