@@ -91,7 +91,7 @@ export async function parseRSSFeed(url: string): Promise<NewsItem[]> {
         feedparser.on('readable', () => {
           let item;
           while ((item = feedparser.read())) {
-            const pubDate = item.date || item.pubdate || item.published;
+            const pubDate = item.date || item.pubdate;
 
             // Skip items older than 24 hours
             if (pubDate && new Date(pubDate) < twentyFourHoursAgo) {
